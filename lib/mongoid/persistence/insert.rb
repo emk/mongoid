@@ -27,8 +27,7 @@ module Mongoid #:nodoc:
         @document.run_callbacks(:before_save)
         if insert
           @document.new_record = false
-          # TODO: All child document new_record flags must get set to false
-          # here or somewhere - this will cause problems.
+          children.each {|child| child.new_record = false }
           @document.move_changes
           @document.run_callbacks(:after_create)
           @document.run_callbacks(:after_save)
@@ -44,6 +43,24 @@ module Mongoid #:nodoc:
         else
           @collection.insert(@document.raw_attributes, @options)
         end
+      end
+
+      def children
+        children = []
+        @document.associations.each do |name, metadata|
+          if embedded_association?(metadata)
+            child = @document.send(name)
+            unless child.nil? || (child.respond_to?(:empty) && child.empty?)
+              children.concat(child.to_a)
+            end
+          end
+        end
+        children
+      end
+
+      def embedded_association?(metadata)
+        [Mongoid::Associations::EmbedsOne,
+         Mongoid::Associations::EmbedsMany].include?(metadata.association)
       end
     end
   end

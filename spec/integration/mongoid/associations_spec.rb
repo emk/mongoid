@@ -84,6 +84,21 @@ describe Mongoid::Associations do
     end
   end
 
+  context "creating and saving embedded documents" do
+
+    before do
+      @address = Address.new
+      @person = Person.create!(:addresses => [@address])
+      @person.title = "Dr."
+      @person.save!
+      @person.reload      
+    end
+
+    it "should create them only once" do
+      @person.should have(1).address
+    end
+  end
+
   context "one-to-one relational associations" do
 
     before do
