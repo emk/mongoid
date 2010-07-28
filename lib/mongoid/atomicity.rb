@@ -20,9 +20,17 @@ module Mongoid #:nodoc:
       _children.inject({ "$set" => _sets, "$pushAll" => {}, :other => {} }) do |updates, child|
         changes = child._sets
         updates["$set"].update(changes)
-        processed[child.class] = true unless changes.empty?
+        unless changes.empty?
+          processed[child._conficting_modification_key] = true
+        end
         
-        target = processed.has_key?(child.class) ? :other : "$pushAll"
+        # This code for determining when changes must be placed in :other
+        # is incorrect, so just be overly aggressive for now.
+        if processed.has_key?(child._conficting_modification_key)
+          target = :other
+        else
+          target = "$pushAll"
+        end
         
         child._pushes.each do |attr, val|
           if updates[target].has_key?(attr)
@@ -38,6 +46,11 @@ module Mongoid #:nodoc:
     end
 
     protected
+    # Get the key used to check for conflicting modifications.
+    def _conficting_modification_key
+      _path.sub(/\..*/, '')
+    end
+
     # Get all the push attributes that need to occur.
     def _pushes
       (new_record? && embedded_many? && !_parent.new_record?) ? { _path => raw_attributes } : {}
