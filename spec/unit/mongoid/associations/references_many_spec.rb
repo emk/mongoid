@@ -134,6 +134,17 @@ describe Mongoid::Associations::ReferencesMany do
         @association.first.person.should == @parent
       end
     end
+    
+    it "sets the foreign key when it is protected from mass assignment" do
+      Account.expects(:all).returns(@criteria)
+      options = Mongoid::Associations::Options.new(
+        :name => :accounts,
+        :foreign_key => "person_id"
+      )
+      @association = Mongoid::Associations::ReferencesMany.new(@parent, options)
+      @association.build(:nickname => "Checking")
+      @association.first.person_id.should == @parent.id
+    end
   end
 
   describe "#delete_all" do
@@ -230,7 +241,7 @@ describe Mongoid::Associations::ReferencesMany do
   describe "#create" do
 
     before do
-      @post = mock
+      @post = Post.new
       @parent = stub(:id => "5", :class => Person, :new_record? => true)
       Post.expects(:all).returns([])
       @association = Mongoid::Associations::ReferencesMany.new(@parent, options)
@@ -257,7 +268,7 @@ describe Mongoid::Associations::ReferencesMany do
   describe "#create!" do
 
     before do
-      @post = mock
+      @post = Post.new
       @parent = stub(:id => "5", :class => Person, :new_record? => true)
       Post.expects(:all).returns([])
       @association = Mongoid::Associations::ReferencesMany.new(@parent, options)
@@ -415,15 +426,15 @@ describe Mongoid::Associations::ReferencesMany do
     end
 
     it "should update existing documents" do
-      @association.expects(:find).with(0).returns(@first)
-      @association.nested_build({ "0" => { :title => "Yet Another" } })
+      @association.expects(:find).with("0").returns(@first)
+      @association.nested_build({ "0" => { "id" => "0", "title" => "Yet Another" } })
       @association.size.should == 2
       @association[0].title.should == "Yet Another"
     end
 
     it "should create new documents" do
-      @association.expects(:find).with(2).raises(Mongoid::Errors::DocumentNotFound.new(Post, 2))
-      @association.nested_build({ "2" => { :title => "Yet Another" } })
+      @association.expects(:find).with(nil).raises(Mongoid::Errors::DocumentNotFound.new(Post, nil))
+      @association.nested_build({ "2" => { "title" => "Yet Another" } })
       @association.size.should == 3
       @association[2].title.should == "Yet Another"
     end

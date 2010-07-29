@@ -20,8 +20,9 @@ module Mongoid # :nodoc:
       cattr_accessor :embedded
       self.embedded = false
 
-      class_inheritable_accessor :associations
+      class_inheritable_accessor :associations, :cascades
       self.associations = {}
+      self.cascades = {}
 
       delegate :embedded, :embedded?, :to => "self.class"
     end
@@ -204,6 +205,7 @@ module Mongoid # :nodoc:
         set_callback :save, :before do |document|
           document.update_associations(name)
         end
+        add_cascade(name, options)
       end
 
       alias :has_many_related :references_many
@@ -223,10 +225,14 @@ module Mongoid # :nodoc:
       #   end
       def references_one(name, options = {}, &block)
         opts = optionize(name, options, constraint(name, options, :one), &block)
-        associate(Associations::ReferencesOne, opts)
+        type = Associations::ReferencesOne
+        associate(type, opts)
+        add_builder(type, opts)
+        add_creator(type, opts)
         set_callback :save, :before do |document|
           document.update_association(name)
         end
+        add_cascade(name, options)
       end
 
       alias :has_one_related :references_one
@@ -269,7 +275,20 @@ module Mongoid # :nodoc:
       def associate(type, options)
         name = options.name.to_s
         associations[name] = MetaData.new(type, options)
-        define_method(name) { memoized(name) { type.instantiate(self, options) } }
+        define_method(name) do
+          memoized(name) do
+            proxy = type.new(self, options)
+            case proxy
+            when Associations::ReferencesOne,
+                 Associations::EmbedsOne,
+                 Associations::ReferencedIn,
+                 Associations::EmbeddedIn
+              proxy.target ? proxy : nil
+            else
+              proxy
+            end
+          end
+        end
         define_method("#{name}=") do |object|
           unmemoize(name)
           memoized(name) { type.update(object, self, options) }
@@ -284,10 +303,10 @@ module Mongoid # :nodoc:
           attrs = params[0]
           attr_options = params[1] || {}
           reset(name) do
-            unless type == Associations::EmbedsOne && attr_options[:update_only]
-              type.new(self, (attrs || {}).stringify_keys, options)
-            end
-          end
+            proxy = type.new(self, options)
+            proxy.build((attrs || {}).stringify_keys)
+            proxy
+          end unless type == Associations::EmbedsOne && attr_options[:update_only]
         end
       end
 
@@ -302,6 +321,12 @@ module Mongoid # :nodoc:
             send("build_#{name}", attrs, attr_options).tap(&:save)
           end
         end
+      end
+
+      # Create the callbacks for dependent deletes and destroys.
+      def add_cascade(name, options)
+        dependent = options[:dependent]
+        self.cascades[name] = dependent if dependent
       end
 
       # build the options given the params.
